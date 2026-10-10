@@ -6,7 +6,7 @@ addEventListener("keydown", e => { if (!keys[e.code]) pressed[e.code] = true; ke
 addEventListener("keyup", e => { keys[e.code] = false; });
 const L = k => keys[k] || false;
 
-let state = "title", lvl = 0, cam = 0, ents = [], items = [], player, wave = 0, lock = false, lives = 3, score = 0, msg = "", msgT = 0;
+let state = "title", lvl = 0, cam = 0, ents = [], items = [], player, wave = 0, lock = false, lives = 3, score = 0, msg = "", msgT = 0, frame = 0;
 
 function mk(x, y, o) { return Object.assign({ x, y, z: 0, vz: 0, vx: 0, face: 1, hp: 30, max: 30, atk: 0, cd: 0, hurt: 0, dead: 0, w: 22 }, o); }
 function newPlayer(x) { return mk(x, 280, { player: true, hp: 100, max: 100, color: "#2255cc", name: "Billy" }); }
@@ -38,6 +38,7 @@ function resolveHits(a) {
   }
 }
 function update() {
+  frame++;
   if (state === "title" || state === "over" || state === "win") { if (pressed.Enter) { lives = 3; score = 0; startLevel(0); } return; }
   if (state === "clear") { if (pressed.Enter) { if (lvl + 1 < LEVELS.length) startLevel(lvl + 1); else state = "win"; } return; }
   const l = LEVELS[lvl], p = player;
@@ -46,7 +47,7 @@ function update() {
   if (!p.dead) {
     let dx = (L("ArrowRight") || L("KeyD") ? 1 : 0) - (L("ArrowLeft") || L("KeyA") ? 1 : 0);
     let dy = (L("ArrowDown") || L("KeyS") ? 1 : 0) - (L("ArrowUp") || L("KeyW") ? 1 : 0);
-    if (p.atk <= 0 && p.hurt <= 0) { p.x += dx * 2.4; p.y += dy * 1.6; if (dx) p.face = dx;
+    if (p.atk <= 0 && p.hurt <= 0) { p.moving = !!(dx || dy); p.x += dx * 2.4; p.y += dy * 1.6; if (dx) p.face = dx;
       if (pressed.KeyJ) attack(p, "punch"); if (pressed.KeyK) attack(p, "kick");
       if (pressed.Space && p.z === 0) p.vz = 7; }
   }
@@ -54,7 +55,7 @@ function update() {
     if (e.enemy && !e.dead && e.hurt <= 0 && e.atk <= 0) {
       const dx = p.x - e.x, dy = p.y - e.y; e.face = dx < 0 ? -1 : 1;
       if (!p.dead && Math.abs(dx) < 34 && Math.abs(dy) < 12) { if (--e.cd <= 0) { attack(e, "punch"); e.cd = e.boss ? 40 : 70; } }
-      else { e.x += Math.sign(Math.abs(dx) > 28 ? dx : 0) * e.speed; e.y += Math.sign(Math.abs(dy) > 4 ? dy : 0) * e.speed * 0.7; }
+      else { e.moving = true; e.x += Math.sign(Math.abs(dx) > 28 ? dx : 0) * e.speed; e.y += Math.sign(Math.abs(dy) > 4 ? dy : 0) * e.speed * 0.7; }
     }
     if (e.atk > 0) { e.atk--; resolveHits(e); }
     if (e.hurt > 0) { e.hurt--; e.x += e.vx; e.vx *= 0.85; }
@@ -85,29 +86,109 @@ function update() {
   for (const k in pressed) delete pressed[k];
 }
 function person(e) {
-  const sx = e.x - cam, sy = e.y - e.z;
+  const sx = Math.round(e.x - cam), sy = Math.round(e.y - e.z), s = e.boss ? 1.35 : 1;
   if (e.dead) ctx.globalAlpha = e.dead / 40;
-  ctx.fillStyle = "rgba(0,0,0,.3)"; ctx.fillRect(sx - 12, e.y - 2, 24, 4);
-  const s = e.boss ? 1.4 : 1;
-  ctx.fillStyle = e.hurt > 0 && e.hurt % 4 < 2 ? "#fff" : e.color; ctx.fillRect(sx - 8 * s, sy - 40 * s, 16 * s, 26 * s);
-  ctx.fillStyle = "#f1c27d"; ctx.fillRect(sx - 6 * s, sy - 54 * s, 12 * s, 14 * s);
-  ctx.fillStyle = "#222"; ctx.fillRect(sx - 8 * s, sy - 14 * s, 6 * s, 14 * s); ctx.fillRect(sx + 2 * s, sy - 14 * s, 6 * s, 14 * s);
-  if (e.atk > 0) { ctx.fillStyle = "#f1c27d"; const k = e.kind === "kick"; ctx.fillRect(sx + e.face * 8 * s - (e.face < 0 ? 22 : 0), sy - (k ? 14 : 34) * s, 22, 6); }
-  ctx.globalAlpha = 1;
+  ctx.fillStyle = "rgba(12,16,28,.42)"; ctx.beginPath(); ctx.ellipse(sx, e.y - 1, 13 * s, 4 * s, 0, 0, Math.PI * 2); ctx.fill();
+  const flash = e.hurt > 0 && e.hurt % 4 < 2, walk = e.moving && !e.atk && !e.hurt;
+  const step = walk ? Math.sin(frame * 0.42 + e.x) * 3 : 0;
+  const bob = walk ? Math.abs(Math.sin(frame * 0.42 + e.x)) * 1.5 : 0;
+  const punch = e.atk > 0 && e.kind !== "kick", kick = e.atk > 0 && e.kind === "kick";
+  const extend = punch ? (e.atk < 9 ? 13 : 3) : 0;
+  ctx.save(); ctx.translate(sx, sy - bob); ctx.scale(e.face || 1, 1);
+  const skin = flash ? "#fff" : e.player ? "#e8ad78" : "#d99a69";
+  const coat = flash ? "#fff" : e.color || "#a43f35";
+  const dark = e.player ? "#17264f" : e.boss ? "#34233f" : "#28253b";
+  const outline = "#171827";
+  ctx.imageSmoothingEnabled = false;
+  // Boots and swinging legs
+  ctx.fillStyle = outline; ctx.fillRect(-8 * s, -13 * s, 7 * s, 14 * s); ctx.fillRect(2 * s, -13 * s, 7 * s, 14 * s);
+  ctx.fillStyle = dark;
+  if (kick) {
+    const reach = (e.atk < 10 ? 25 : 10) * s;
+    ctx.fillRect(-7 * s, -20 * s, 7 * s, 8 * s); ctx.fillRect(1 * s, -14 * s, reach, 6 * s);
+    ctx.fillStyle = "#ddd"; ctx.fillRect((reach - 1) * s, -15 * s, 7 * s, 7 * s);
+  } else {
+    ctx.fillRect(-7 * s + step, -23 * s, 6 * s, 12 * s);
+    ctx.fillRect(2 * s - step, -23 * s, 6 * s, 12 * s);
+    ctx.fillStyle = "#ddd"; ctx.fillRect(-9 * s + step, -12 * s, 9 * s, 4 * s); ctx.fillRect(1 * s - step, -12 * s, 10 * s, 4 * s);
+  }
+  // Jacket, belt and shoulders
+  ctx.fillStyle = outline; ctx.fillRect(-11 * s, -43 * s, 22 * s, 23 * s);
+  ctx.fillStyle = coat; ctx.fillRect(-9 * s, -42 * s, 18 * s, 19 * s);
+  ctx.fillStyle = flash ? "#fff" : (e.player ? "#477fe0" : "#e0a84a");
+  ctx.fillRect(-7 * s, -39 * s, 3 * s, 11 * s); ctx.fillRect(4 * s, -39 * s, 3 * s, 11 * s);
+  ctx.fillStyle = "#d6b557"; ctx.fillRect(-8 * s, -24 * s, 16 * s, 3 * s); ctx.fillRect(-2 * s, -24 * s, 4 * s, 3 * s);
+  // Arms and attack pose
+  ctx.fillStyle = outline; ctx.fillRect(-13 * s, -40 * s, 5 * s, 14 * s); ctx.fillRect(8 * s, -40 * s, 5 * s, 14 * s);
+  ctx.fillStyle = skin;
+  ctx.fillRect(-12 * s, -28 * s, 5 * s, 5 * s);
+  if (punch) { ctx.fillRect(8 * s, -38 * s, (11 + extend) * s, 6 * s); ctx.fillStyle = "#f0bc8e"; ctx.fillRect((17 + extend) * s, -39 * s, 7 * s, 7 * s); }
+  else { ctx.fillRect(8 * s, -28 * s, 5 * s, 5 * s); }
+  // Head, hair and face
+  ctx.fillStyle = outline; ctx.fillRect(-8 * s, -57 * s, 16 * s, 16 * s);
+  ctx.fillStyle = skin; ctx.fillRect(-6 * s, -55 * s, 12 * s, 12 * s);
+  ctx.fillStyle = e.player ? "#4a3024" : e.boss ? "#211c2d" : "#36241c";
+  ctx.fillRect(-7 * s, -57 * s, 14 * s, 5 * s); ctx.fillRect(-7 * s, -53 * s, 3 * s, 4 * s);
+  ctx.fillStyle = "#fff"; ctx.fillRect(2 * s, -51 * s, 3 * s, 3 * s);
+  ctx.fillStyle = "#171827"; ctx.fillRect(4 * s, -50 * s, 2 * s, 2 * s);
+  ctx.fillStyle = "#9f5548"; ctx.fillRect(1 * s, -45 * s, 5 * s, 2 * s);
+  if (e.boss) { ctx.fillStyle = "#f2cc54"; ctx.fillRect(-10 * s, -47 * s, 20 * s, 3 * s); }
+  ctx.restore(); ctx.globalAlpha = 1; e.moving = false;
 }
 function bar(x, y, w, v, m, c) { ctx.fillStyle = "#300"; ctx.fillRect(x, y, w, 8); ctx.fillStyle = c; ctx.fillRect(x, y, w * Math.max(0, v) / m, 8); ctx.strokeStyle = "#fff"; ctx.strokeRect(x, y, w, 8); }
 function text(t, x, y, s, c, a) { ctx.font = "bold " + s + "px monospace"; ctx.textAlign = a || "center"; ctx.fillStyle = c || "#fff"; ctx.fillText(t, x, y); }
 function drawBg(l) {
   const g = ctx.createLinearGradient(0, 0, 0, FLOOR_TOP); g.addColorStop(0, l.sky[0]); g.addColorStop(1, l.sky[1]);
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, FLOOR_TOP);
+  // Distant hills and clouds move at different speeds to give each stage depth.
+  ctx.fillStyle = "rgba(255,255,255,.32)";
+  for (let i = 0; i < 4; i++) {
+    const x = ((i * 190 - cam * 0.18 + 720) % 820) - 90, y = 38 + (i % 2) * 27;
+    ctx.fillRect(x, y + 7, 54, 10); ctx.fillRect(x + 10, y, 30, 18); ctx.fillRect(x + 36, y + 4, 22, 13);
+  }
+  ctx.fillStyle = "rgba(32,61,91,.18)";
+  for (let i = 0; i < 8; i++) {
+    const x = i * 105 - (cam * 0.32 % 105);
+    ctx.beginPath(); ctx.moveTo(x - 50, FLOOR_TOP); ctx.lineTo(x + 35, 105 + (i % 3) * 14); ctx.lineTo(x + 125, FLOOR_TOP); ctx.fill();
+  }
+  ctx.fillStyle = "rgba(27,52,63,.16)"; ctx.fillRect(0, 185, W, 35);
   for (const [n, x, c] of l.landmarks) {
-    const sx = x - cam * 0.8; if (sx < -260 || sx > W) continue;
-    ctx.fillStyle = c; ctx.fillRect(sx, 80, 220, FLOOR_TOP - 80);
-    ctx.fillStyle = "#ffeb99"; for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) ctx.fillRect(sx + 15 + i * 50, 100 + j * 50, 24, 28);
-    ctx.fillStyle = "#000"; ctx.fillRect(sx + 90, 170, 40, 50); text(n, sx + 110, 74, 12, "#222");
+    const sx = Math.round(x - cam * 0.8); if (sx < -260 || sx > W) continue;
+    const isSchool = /school|gym|field/i.test(n), isLake = /marina|boat|lake|bowl/i.test(n), isHotel = /hotel|theatre|athenaeum|tower/i.test(n);
+    const bw = isHotel ? 176 : 220, top = isHotel ? 60 : 91;
+    ctx.fillStyle = "rgba(20,30,45,.18)"; ctx.fillRect(sx + 7, top + 7, bw, FLOOR_TOP - top);
+    ctx.fillStyle = c; ctx.fillRect(sx, top, bw, FLOOR_TOP - top);
+    ctx.fillStyle = isHotel ? "#493c38" : isSchool ? "#6c2f35" : isLake ? "#e4bb64" : "#3b3541";
+    ctx.fillRect(sx - 5, top - 7, bw + 10, 12);
+    ctx.fillStyle = "rgba(255,255,255,.2)"; ctx.fillRect(sx + 4, top + 13, bw - 8, 4);
+    const columns = isHotel ? 4 : 5;
+    for (let i = 0; i < columns; i++) {
+      const wx = sx + 13 + i * ((bw - 36) / columns);
+      for (let j = 0; j < 2; j++) {
+        const wy = top + 31 + j * 39;
+        ctx.fillStyle = "#292d43"; ctx.fillRect(wx - 2, wy - 2, 24, 27);
+        ctx.fillStyle = isLake ? "#7ed4e3" : "#ffd98a"; ctx.fillRect(wx, wy, 20, 21);
+        ctx.fillStyle = "rgba(255,255,255,.55)"; ctx.fillRect(wx + 2, wy + 2, 3, 16);
+        ctx.fillStyle = "#6e4b3e"; ctx.fillRect(wx + 9, wy, 2, 21);
+      }
+    }
+    ctx.fillStyle = "#362e34"; ctx.fillRect(sx + bw * .43, FLOOR_TOP - 49, 34, 49);
+    ctx.fillStyle = "#d6b66b"; ctx.fillRect(sx + bw * .43 + 4, FLOOR_TOP - 45, 26, 45);
+    ctx.fillStyle = "#312f3b"; ctx.fillRect(sx + bw * .43 + 11, FLOOR_TOP - 20, 3, 3);
+    ctx.fillStyle = isSchool ? "#f6d257" : "#26324b";
+    ctx.fillRect(sx + bw * .25, top + 8, bw * .5, 15);
+    text(n, sx + bw * .5, top + 19, n.length > 17 ? 8 : 10, "#fff");
+    ctx.fillStyle = "#454050"; ctx.fillRect(sx - 8, FLOOR_TOP - 5, bw + 16, 7);
   }
   ctx.fillStyle = l.ground; ctx.fillRect(0, FLOOR_TOP, W, H - FLOOR_TOP);
-  ctx.fillStyle = "#ddd"; for (let x = -((cam | 0) % 80); x < W; x += 80) ctx.fillRect(x, FLOOR_TOP + 60, 40, 3);
+  ctx.fillStyle = "rgba(242,220,174,.58)"; ctx.fillRect(0, FLOOR_TOP, W, 4);
+  ctx.fillStyle = "rgba(32,32,40,.22)"; ctx.fillRect(0, FLOOR_TOP + 6, W, 3);
+  ctx.fillStyle = "rgba(235,223,190,.32)"; ctx.fillRect(0, FLOOR_TOP + 30, W, 2);
+  for (let x = -((cam | 0) % 80); x < W; x += 80) {
+    ctx.fillStyle = "rgba(24,25,31,.15)"; ctx.fillRect(x + 13, FLOOR_TOP + 59, 2, 2);
+    ctx.fillRect(x + 48, FLOOR_TOP + 83, 13, 2);
+    ctx.fillStyle = "rgba(255,255,255,.2)"; ctx.fillRect(x + 25, FLOOR_TOP + 100, 2, 2);
+  }
 }
 function draw() {
   ctx.clearRect(0, 0, W, H);
