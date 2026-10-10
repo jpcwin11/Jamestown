@@ -135,8 +135,24 @@ function person(e) {
   if (e.boss) { ctx.fillStyle = "#f2cc54"; ctx.fillRect(-10 * s, -47 * s, 20 * s, 3 * s); }
   ctx.restore(); ctx.globalAlpha = 1; e.moving = false;
 }
-function bar(x, y, w, v, m, c) { ctx.fillStyle = "#300"; ctx.fillRect(x, y, w, 8); ctx.fillStyle = c; ctx.fillRect(x, y, w * Math.max(0, v) / m, 8); ctx.strokeStyle = "#fff"; ctx.strokeRect(x, y, w, 8); }
-function text(t, x, y, s, c, a) { ctx.font = "bold " + s + "px monospace"; ctx.textAlign = a || "center"; ctx.fillStyle = c || "#fff"; ctx.fillText(t, x, y); }
+function panel(x, y, w, h, fill) {
+  ctx.fillStyle = "#171b31"; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = fill || "#343b5b"; ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+  ctx.fillStyle = "rgba(255,255,255,.13)"; ctx.fillRect(x + 3, y + 3, w - 6, 2);
+  ctx.strokeStyle = "#090c18"; ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+}
+function bar(x, y, w, v, m, c) {
+  ctx.fillStyle = "#171321"; ctx.fillRect(x, y, w, 10);
+  ctx.fillStyle = "#6a2637"; ctx.fillRect(x + 1, y + 1, w - 2, 8);
+  ctx.fillStyle = c; ctx.fillRect(x + 1, y + 1, (w - 2) * Math.max(0, Math.min(1, v / m)), 8);
+  ctx.fillStyle = "rgba(255,255,255,.25)"; ctx.fillRect(x + 1, y + 1, (w - 2) * Math.max(0, Math.min(1, v / m)), 2);
+  ctx.strokeStyle = "#e7d8ad"; ctx.lineWidth = 1; ctx.strokeRect(x, y, w, 10);
+}
+function text(t, x, y, s, c, a) {
+  ctx.font = "bold " + s + "px monospace"; ctx.textAlign = a || "center";
+  ctx.lineWidth = Math.max(2, s / 6); ctx.strokeStyle = "#171827"; ctx.strokeText(t, x, y);
+  ctx.fillStyle = c || "#fff"; ctx.fillText(t, x, y);
+}
 function drawBg(l) {
   const g = ctx.createLinearGradient(0, 0, 0, FLOOR_TOP); g.addColorStop(0, l.sky[0]); g.addColorStop(1, l.sky[1]);
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, FLOOR_TOP);
@@ -192,17 +208,49 @@ function drawBg(l) {
 }
 function draw() {
   ctx.clearRect(0, 0, W, H);
-  if (state === "title") { ctx.fillStyle = "#123"; ctx.fillRect(0, 0, W, H); text("JAMESTOWN BRAWL '95", W / 2, 110, 36, "#fc0");
-    text("Downtown • High School • Foote Ave • Lakewood • Chautauqua", W / 2, 160, 14); text("Press ENTER", W / 2, 260, 20); return; }
-  if (state === "over") { text("GAME OVER  Score " + score, W / 2, 180, 30, "#f55"); text("ENTER to retry", W / 2, 230, 16); return; }
-  if (state === "win") { ctx.fillStyle = "#123"; ctx.fillRect(0, 0, W, H); text("You cleaned up Chautauqua County!", W / 2, 170, 26, "#fc0"); text("Score " + score + " - ENTER to play again", W / 2, 220, 16); return; }
+  if (state === "title") {
+    drawBg(LEVELS[0]);
+    ctx.fillStyle = "rgba(12,17,39,.52)"; ctx.fillRect(0, 0, W, H);
+    person({ x: 238, y: 319, z: 0, face: 1, color: "#2255cc", player: true });
+    person({ x: 401, y: 319, z: 0, face: -1, color: "#aa3333" });
+    panel(111, 34, 418, 104, "#26345a");
+    text("JAMESTOWN", W / 2, 78, 35, "#f7d15c");
+    text("BRAWL '95", W / 2, 119, 30, "#ef654e");
+    text("A CHAUTAUQUA COUNTY BEAT-'EM-UP", W / 2, 164, 12, "#fff");
+    panel(157, 189, 326, 35, "#35466d");
+    text("DOWNTOWN  •  FOOTE AVE  •  LAKEWOOD", W / 2, 211, 10, "#e6e4d1");
+    const prompt = Math.floor(frame / 28) % 2 ? "#ffe98b" : "#fff";
+    text("PRESS ENTER", W / 2, 271, 20, prompt);
+    text("ARROWS / WASD MOVE     J PUNCH     K KICK     SPACE JUMP", W / 2, 342, 9, "#d3d4e3");
+    return;
+  }
+  if (state === "over" || state === "win") {
+    drawBg(LEVELS[state === "win" ? LEVELS.length - 1 : lvl]);
+    ctx.fillStyle = "rgba(9,13,31,.76)"; ctx.fillRect(0, 0, W, H);
+    panel(101, 99, 438, 163, "#273252");
+    text(state === "win" ? "COUNTY CHAMPION!" : "GAME OVER", W / 2, 151, 30, state === "win" ? "#f7d15c" : "#ef654e");
+    text(state === "win" ? "You cleaned up Chautauqua County!" : "Final Score  " + score, W / 2, 190, 15, "#fff");
+    text(state === "win" ? "Score  " + score : "ENTER TO RETRY", W / 2, 229, 15, "#f7d15c");
+    if (state === "win") text("PRESS ENTER TO PLAY AGAIN", W / 2, 250, 10, "#d3d4e3");
+    return;
+  }
   const l = LEVELS[lvl]; drawBg(l);
-  for (const it of items) if (!it.taken) { ctx.fillStyle = "#fff"; ctx.fillRect(it.x - cam - 8, it.y - 12, 16, 12); ctx.fillStyle = "#e22"; ctx.fillRect(it.x - cam - 2, it.y - 11, 4, 10); }
+  for (const it of items) if (!it.taken) {
+    const ix = Math.round(it.x - cam), iy = Math.round(it.y - 13 + Math.sin(frame * .12) * 2);
+    ctx.fillStyle = "rgba(12,16,28,.35)"; ctx.fillRect(ix - 10, it.y - 2, 20, 4);
+    ctx.fillStyle = "#171827"; ctx.fillRect(ix - 9, iy - 1, 18, 14);
+    ctx.fillStyle = "#f1eee0"; ctx.fillRect(ix - 7, iy + 1, 14, 10);
+    ctx.fillStyle = "#cf4147"; ctx.fillRect(ix - 2, iy + 1, 4, 10); ctx.fillRect(ix - 7, iy + 4, 14, 4);
+  }
   [...ents].sort((a, b) => a.y - b.y).forEach(person);
-  bar(10, 10, 120, player.hp, player.max, "#3c3"); text("Lives " + lives + "  Score " + score, 140, 18, 12, "#fff", "left");
-  text(l.name + " – " + l.sub, W - 10, 18, 12, "#fff", "right");
-  const b = ents.find(e => e.boss); if (b) { bar(W / 2 - 100, 30, 200, b.hp, b.max, "#c3c"); text(b.name, W / 2, 52, 12); }
-  if (msgT > 0) text(msg, W / 2, 120, 24, "#fff");
-  if (state === "clear") { ctx.fillStyle = "rgba(0,0,0,.6)"; ctx.fillRect(0, 0, W, H); text(l.name + " cleared!", W / 2, 170, 28, "#fc0"); text("ENTER for next level", W / 2, 220, 16); }
+  ctx.fillStyle = "rgba(12,16,32,.82)"; ctx.fillRect(0, 0, W, 39);
+  panel(7, 4, 185, 31, "#303958"); text("BILLY", 14, 17, 9, "#fff", "left");
+  bar(54, 9, 94, player.hp, player.max, "#55d16b");
+  text("♥ " + lives + "   SCORE " + String(score).padStart(6, "0"), 14, 29, 9, "#f4d66e", "left");
+  text(l.name + "  /  " + l.sub, W - 12, 16, 10, "#fff", "right");
+  const b = ents.find(e => e.boss);
+  if (b) { panel(W / 2 - 112, 23, 224, 31, "#40314f"); text(b.name, W / 2, 35, 10, "#fff"); bar(W / 2 - 95, 40, 190, b.hp, b.max, "#d34dc0"); }
+  if (msgT > 0) { panel(W / 2 - 134, 91, 268, 39, "#35466d"); text(msg, W / 2, 117, 20, "#ffe98b"); }
+  if (state === "clear") { ctx.fillStyle = "rgba(0,0,0,.64)"; ctx.fillRect(0, 0, W, H); panel(147, 134, 346, 100, "#344365"); text(l.name + " CLEARED!", W / 2, 174, 23, "#f7d15c"); text("ENTER FOR NEXT STAGE", W / 2, 211, 13, "#fff"); }
 }
 (function loop() { update(); draw(); requestAnimationFrame(loop); })();
