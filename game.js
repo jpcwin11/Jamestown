@@ -8,8 +8,28 @@ const L = k => keys[k] || false;
 
 let state = "title", lvl = 0, cam = 0, ents = [], items = [], player, wave = 0, lock = false, lives = 3, score = 0, msg = "", msgT = 0, frame = 0, fx = [], showMap = false, cleared = [];
 
+// Distinct character designs: skin, hair colour/style, jacket, trim, pants, shoes, face extras.
+const LOOKS = {
+  hero: { skin: "#e8ad78", hair: "#4a3024", style: "spiky", coat: "#2255cc", trim: "#ffffff", pants: "#1d2f6b", shoes: "#f2f2f2", band: "#d93a3a" },
+  punk: { skin: "#f0c8a0", hair: "#e0307a", style: "mohawk", coat: "#2b2b2b", trim: "#c0c0c0", pants: "#4a2a5a", shoes: "#111", scar: 1 },
+  brute: { skin: "#c98b5e", hair: "#2a1d16", style: "bald", coat: "#7a3b2e", trim: "#d9c9a0", pants: "#3b3b3b", shoes: "#4a3a2a", beard: "#2a1d16" },
+  biker: { skin: "#a8744f", hair: "#1c1c1c", style: "bandana", coat: "#3d3d46", trim: "#e0a84a", pants: "#26324b", shoes: "#222", shades: 1, band: "#c62828" },
+  cap: { skin: "#f4d3b0", hair: "#d8a23a", style: "cap", coat: "#2e8b57", trim: "#ffffff", pants: "#6b5b3e", shoes: "#e0e0e0", cap: "#1565c0" }
+};
+const ENEMY_LOOKS = ["punk", "brute", "biker", "cap"];
+const BOSS_LOOKS = [
+  { skin: "#c9a27a", hair: "#555", style: "bald", coat: "#8a6d3b", trim: "#f2cc54", pants: "#34233f", shoes: "#222", beard: "#777", shades: 0 },
+  { skin: "#d99a69", hair: "#222", style: "cap", coat: "#b01e1e", trim: "#fff", pants: "#222", shoes: "#fff", cap: "#8b0000", whistle: 1 },
+  { skin: "#e0b088", hair: "#111", style: "slick", coat: "#1c1c24", trim: "#d33", pants: "#111", shoes: "#000", shades: 1 },
+  { skin: "#e8b48a", hair: "#e6c36a", style: "spiky", coat: "#00acc1", trim: "#ff7043", pants: "#01579b", shoes: "#fff", shades: 1 },
+  { skin: "#d9a07a", hair: "#2a2a2a", style: "cap", coat: "#37474f", trim: "#ffb300", pants: "#212121", shoes: "#111", cap: "#ffb300", beard: "#2a2a2a" },
+  { skin: "#b9805a", hair: "#3a3a3a", style: "bandana", coat: "#5d4037", trim: "#bcaaa4", pants: "#263238", shoes: "#111", band: "#455a64", scar: 1 },
+  { skin: "#f0c8a0", hair: "#8d4a1f", style: "mohawk", coat: "#ad1457", trim: "#f8bbd0", pants: "#3e2723", shoes: "#222" },
+  { skin: "#e8c9a0", hair: "#6a1b9a", style: "slick", coat: "#8e24aa", trim: "#fbc02d", pants: "#311b92", shoes: "#fbc02d", shades: 1 },
+  { skin: "#f0d0b0", hair: "#ddd", style: "slick", coat: "#f5f5f5", trim: "#9e9e9e", pants: "#424242", shoes: "#333", beard: "#ddd" }
+];
 function mk(x, y, o) { return Object.assign({ x, y, z: 0, vz: 0, vx: 0, face: 1, hp: 30, max: 30, atk: 0, cd: 0, hurt: 0, dead: 0, w: 22 }, o); }
-function newPlayer(x) { return mk(x, 280, { player: true, hp: 100, max: 100, color: "#2255cc", name: "Billy" }); }
+function newPlayer(x) { return mk(x, 280, { player: true, hp: 100, max: 100, look: LOOKS.hero, name: "Billy" }); }
 function startLevel(i) {
   lvl = i; cam = 0; wave = 0; lock = false; ents = []; items = []; fx = []; showMap = false;
   player = newPlayer(60); ents.push(player); state = "play"; say(LEVELS[i].name, 150);
@@ -17,8 +37,8 @@ function startLevel(i) {
 function say(t, n) { msg = t; msgT = n; }
 function spawnEnemy(x, boss) {
   const l = LEVELS[lvl], hp = 25 + lvl * 8;
-  const e = boss ? mk(x, 280, { enemy: true, boss: true, hp: l.boss.hp, max: l.boss.hp, color: "#aa00aa", w: 30, name: l.boss.name, speed: 1.1 })
-    : mk(x, FLOOR_TOP + 10 + Math.random() * 110, { enemy: true, hp, max: hp, color: ["#aa3333", "#33aa33", "#aa7733"][lvl % 3], speed: 0.8 + Math.random() * 0.4 + lvl * 0.1 });
+  const e = boss ? mk(x, 280, { enemy: true, boss: true, hp: l.boss.hp, max: l.boss.hp, look: BOSS_LOOKS[lvl % BOSS_LOOKS.length], w: 30, name: l.boss.name, speed: 1.1 })
+    : mk(x, FLOOR_TOP + 10 + Math.random() * 110, { enemy: true, hp, max: hp, look: LOOKS[ENEMY_LOOKS[Math.floor(Math.random() * ENEMY_LOOKS.length)]], speed: 0.8 + Math.random() * 0.4 + lvl * 0.1 });
   ents.push(e);
 }
 function attack(a, kind) {
@@ -103,9 +123,8 @@ function person(e) {
   if (e.atk > 0) ext = e.atk > hitAt ? -0.35 * ((total - e.atk) / (total - hitAt)) : e.atk > hitAt - 4 ? 1 : Math.max(0, e.atk / (hitAt - 4));
   const extend = punch ? Math.max(0, ext) * 15 : 0, lean = e.atk > 0 ? ext * 3 : 0;
   ctx.save(); ctx.translate(sx, sy - bob); ctx.scale(e.face || 1, 1); ctx.translate(lean, 0);
-  const skin = flash ? "#fff" : e.player ? "#e8ad78" : "#d99a69";
-  const coat = flash ? "#fff" : e.color || "#a43f35";
-  const dark = e.player ? "#17264f" : e.boss ? "#34233f" : "#28253b";
+  const lk = e.look || LOOKS.punk, F = c => flash ? "#fff" : c;
+  const skin = F(lk.skin), coat = F(lk.coat), dark = F(lk.pants), shoe = F(lk.shoes), trim = F(lk.trim);
   const outline = "#171827";
   ctx.imageSmoothingEnabled = false;
   // Boots and swinging legs
@@ -114,21 +133,21 @@ function person(e) {
   if (kick) {
     const k = Math.max(0, ext), len = (6 + k * 26) * s, rise = (14 + k * 10) * s;
     ctx.fillRect(-7 * s, -23 * s, 6 * s, 12 * s);
-    ctx.fillStyle = "#ddd"; ctx.fillRect(-9 * s, -12 * s, 9 * s, 4 * s);
+    ctx.fillStyle = shoe; ctx.fillRect(-9 * s, -12 * s, 9 * s, 4 * s);
     ctx.fillStyle = outline; ctx.fillRect(1 * s, -rise - 2 * s, len + 8 * s, 9 * s);
     ctx.fillStyle = dark; ctx.fillRect(1 * s, -rise, len, 6 * s);
-    ctx.fillStyle = "#ddd"; ctx.fillRect(len, -rise - 1 * s, 8 * s, 8 * s);
+    ctx.fillStyle = shoe; ctx.fillRect(len, -rise - 1 * s, 8 * s, 8 * s);
     if (k > 0.5) { ctx.strokeStyle = "rgba(255,255,255,.7)"; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(2 * s, -rise + 3 * s, len + 6 * s, -0.7, 0.5); ctx.stroke(); }
   } else {
     ctx.fillRect(-7 * s + step, -23 * s, 6 * s, 12 * s);
     ctx.fillRect(2 * s - step, -23 * s, 6 * s, 12 * s);
-    ctx.fillStyle = "#ddd"; ctx.fillRect(-9 * s + step, -12 * s, 9 * s, 4 * s); ctx.fillRect(1 * s - step, -12 * s, 10 * s, 4 * s);
+    ctx.fillStyle = shoe; ctx.fillRect(-9 * s + step, -12 * s, 9 * s, 4 * s); ctx.fillRect(1 * s - step, -12 * s, 10 * s, 4 * s);
   }
   // Jacket, belt and shoulders
   ctx.fillStyle = outline; ctx.fillRect(-11 * s, -43 * s, 22 * s, 23 * s);
   ctx.fillStyle = coat; ctx.fillRect(-9 * s, -42 * s, 18 * s, 19 * s);
-  ctx.fillStyle = flash ? "#fff" : (e.player ? "#477fe0" : "#e0a84a");
+  ctx.fillStyle = trim;
   ctx.fillRect(-7 * s, -39 * s, 3 * s, 11 * s); ctx.fillRect(4 * s, -39 * s, 3 * s, 11 * s);
   ctx.fillStyle = "#d6b557"; ctx.fillRect(-8 * s, -24 * s, 16 * s, 3 * s); ctx.fillRect(-2 * s, -24 * s, 4 * s, 3 * s);
   // Arms and attack pose
@@ -142,12 +161,23 @@ function person(e) {
   // Head, hair and face
   ctx.fillStyle = outline; ctx.fillRect(-8 * s, -57 * s, 16 * s, 16 * s);
   ctx.fillStyle = skin; ctx.fillRect(-6 * s, -55 * s, 12 * s, 12 * s);
-  ctx.fillStyle = e.player ? "#4a3024" : e.boss ? "#211c2d" : "#36241c";
-  ctx.fillRect(-7 * s, -57 * s, 14 * s, 5 * s); ctx.fillRect(-7 * s, -53 * s, 3 * s, 4 * s);
+  const hair = F(lk.hair); ctx.fillStyle = hair;
+  const st = lk.style;
+  if (st === "bald") { ctx.fillRect(-7 * s, -55 * s, 14 * s, 2 * s); ctx.fillStyle = skin; ctx.fillRect(-6 * s, -57 * s, 12 * s, 3 * s); ctx.fillStyle = hair; }
+  else if (st === "mohawk") { ctx.fillRect(-2 * s, -66 * s, 5 * s, 10 * s); ctx.fillRect(-7 * s, -53 * s, 3 * s, 4 * s); }
+  else if (st === "spiky") { ctx.fillRect(-7 * s, -57 * s, 14 * s, 5 * s); for (let i = 0; i < 4; i++) ctx.fillRect((-7 + i * 4) * s, -62 * s, 3 * s, 6 * s); ctx.fillRect(-7 * s, -53 * s, 3 * s, 4 * s); }
+  else if (st === "slick") { ctx.fillRect(-8 * s, -58 * s, 16 * s, 6 * s); ctx.fillRect(-9 * s, -53 * s, 4 * s, 9 * s); }
+  else { ctx.fillRect(-7 * s, -57 * s, 14 * s, 5 * s); ctx.fillRect(-7 * s, -53 * s, 3 * s, 4 * s); }
+  if (st === "cap") { ctx.fillStyle = F(lk.cap || "#c33"); ctx.fillRect(-8 * s, -60 * s, 16 * s, 6 * s); ctx.fillRect(2 * s, -55 * s, 10 * s, 3 * s); }
+  if (lk.band) { ctx.fillStyle = F(lk.band); ctx.fillRect(-8 * s, -54 * s, 16 * s, 3 * s); ctx.fillRect(-12 * s, -53 * s, 5 * s, 2 * s); ctx.fillRect(-13 * s, -50 * s, 4 * s, 2 * s); }
   ctx.fillStyle = "#fff"; ctx.fillRect(2 * s, -51 * s, 3 * s, 3 * s);
   ctx.fillStyle = "#171827"; ctx.fillRect(4 * s, -50 * s, 2 * s, 2 * s);
+  if (lk.shades) { ctx.fillStyle = "#0b0b12"; ctx.fillRect(0 * s, -52 * s, 7 * s, 4 * s); }
+  if (lk.beard) { ctx.fillStyle = F(lk.beard); ctx.fillRect(-6 * s, -46 * s, 12 * s, 4 * s); }
   ctx.fillStyle = "#9f5548"; ctx.fillRect(1 * s, -45 * s, 5 * s, 2 * s);
-  if (e.boss) { ctx.fillStyle = "#f2cc54"; ctx.fillRect(-10 * s, -47 * s, 20 * s, 3 * s); }
+  if (lk.scar) { ctx.fillStyle = "#b5443a"; ctx.fillRect(-4 * s, -50 * s, 1 * s, 5 * s); }
+  if (lk.whistle) { ctx.fillStyle = "#ddd"; ctx.fillRect(-2 * s, -41 * s, 4 * s, 3 * s); }
+  if (e.boss) { ctx.fillStyle = "#f2cc54"; ctx.fillRect(-10 * s, -22 * s, 20 * s, 2 * s); ctx.fillRect(-11 * s, -43 * s, 22 * s, 2 * s); }
   ctx.restore(); ctx.globalAlpha = 1; e.moving = false;
 }
 function panel(x, y, w, h, fill) {
@@ -246,8 +276,8 @@ function draw0() {
   if (state === "title") {
     drawBg(LEVELS[0]);
     ctx.fillStyle = "rgba(12,17,39,.52)"; ctx.fillRect(0, 0, W, H);
-    person({ x: 238, y: 319, z: 0, face: 1, color: "#2255cc", player: true });
-    person({ x: 401, y: 319, z: 0, face: -1, color: "#aa3333" });
+    person({ x: 238, y: 319, z: 0, face: 1, look: LOOKS.hero, player: true });
+    person({ x: 401, y: 319, z: 0, face: -1, look: LOOKS.punk });
     panel(111, 34, 418, 104, "#26345a");
     text("JAMESTOWN", W / 2, 78, 35, "#f7d15c");
     text("BRAWL '95", W / 2, 119, 30, "#ef654e");
