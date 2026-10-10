@@ -6,12 +6,12 @@ addEventListener("keydown", e => { if (!keys[e.code]) pressed[e.code] = true; ke
 addEventListener("keyup", e => { keys[e.code] = false; });
 const L = k => keys[k] || false;
 
-let state = "title", lvl = 0, cam = 0, ents = [], items = [], player, wave = 0, lock = false, lives = 3, score = 0, msg = "", msgT = 0, frame = 0;
+let state = "title", lvl = 0, cam = 0, ents = [], items = [], player, wave = 0, lock = false, lives = 3, score = 0, msg = "", msgT = 0, frame = 0, fx = [], showMap = false, cleared = [];
 
 function mk(x, y, o) { return Object.assign({ x, y, z: 0, vz: 0, vx: 0, face: 1, hp: 30, max: 30, atk: 0, cd: 0, hurt: 0, dead: 0, w: 22 }, o); }
 function newPlayer(x) { return mk(x, 280, { player: true, hp: 100, max: 100, color: "#2255cc", name: "Billy" }); }
 function startLevel(i) {
-  lvl = i; cam = 0; wave = 0; lock = false; ents = []; items = [];
+  lvl = i; cam = 0; wave = 0; lock = false; ents = []; items = []; fx = []; showMap = false;
   player = newPlayer(60); ents.push(player); state = "play"; say(LEVELS[i].name, 150);
 }
 function say(t, n) { msg = t; msgT = n; }
@@ -32,14 +32,18 @@ function resolveHits(a) {
     if (t === a || t.dead || !!t.player === !!a.player || t.hurt > 6) continue;
     const dx = (t.x - a.x) * a.face;
     if (dx > -6 && dx < reach && Math.abs(t.y - a.y) < 16 && Math.abs(t.z - a.z) < 30) {
-      t.hp -= dmg; t.hurt = 18; t.vx = a.face * 3; a.hit = true;
+      t.hp -= dmg; t.hurt = 18; t.vx = a.face * (a.kind === "kick" ? 4.5 : 3); a.hit = true;
+      fx.push({ x: t.x - a.face * 4, y: t.y, z: t.z + (a.kind === "kick" ? 22 : 36), t: 10, big: a.kind === "kick" });
       if (t.hp <= 0) { t.dead = 40; if (a.player) score += t.boss ? 1000 : 100; }
     }
   }
 }
 function update() {
   frame++;
-  if (state === "title" || state === "over" || state === "win") { if (pressed.Enter) { lives = 3; score = 0; startLevel(0); } return; }
+  if (pressed.KeyM && (state === "play" || state === "clear" || state === "title")) { showMap = !showMap; pressed.Enter = false; }
+  if (showMap) { for (const k in pressed) delete pressed[k]; return; }
+  if (state === "title" || state === "over" || state === "win") { if (pressed.Enter) { lives = 3; score = 0; cleared = []; startLevel(0); } return; }
+  for (const f of fx) f.t--; fx = fx.filter(f => f.t > 0);
   if (state === "clear") { if (pressed.Enter) { if (lvl + 1 < LEVELS.length) startLevel(lvl + 1); else state = "win"; } return; }
   const l = LEVELS[lvl], p = player;
   if (msgT > 0) msgT--;
@@ -77,7 +81,7 @@ function update() {
   const nxt = l.waves[wave];
   if (!lock && nxt && p.x > nxt[0]) { lock = true; for (let i = 0; i < nxt[1]; i++) spawnEnemy(cam + W - 20 + i * 30); wave++; say("Fight!", 60); }
   else if (!lock && !nxt && !ents.some(e => e.boss) && !l.bossDone && p.x > l.length - 400) { lock = true; l.bossDone = true; spawnEnemy(cam + W - 30, true); say("Boss: " + l.boss.name, 150); }
-  if (lock && enemies === 0) { lock = false; if (l.bossDone) { l.bossDone = false; state = "clear"; score += 500; return; }
+  if (lock && enemies === 0) { lock = false; if (l.bossDone) { l.bossDone = false; state = "clear"; if (!cleared.includes(lvl)) cleared.push(lvl); score += 500; return; }
     items.push({ x: p.x + 60, y: 280, taken: false }); say("GO >>", 90); }
   // camera
   p.x = Math.max(cam + 10, p.x);
@@ -93,8 +97,12 @@ function person(e) {
   const step = walk ? Math.sin(frame * 0.42 + e.x) * 3 : 0;
   const bob = walk ? Math.abs(Math.sin(frame * 0.42 + e.x)) * 1.5 : 0;
   const punch = e.atk > 0 && e.kind !== "kick", kick = e.atk > 0 && e.kind === "kick";
-  const extend = punch ? (e.atk < 9 ? 13 : 3) : 0;
-  ctx.save(); ctx.translate(sx, sy - bob); ctx.scale(e.face || 1, 1);
+  // Attack phases: wind-up -> strike -> recovery (0..1 extension)
+  const total = kick ? 22 : 15, hitAt = kick ? 14 : 9, prog = e.atk > 0 ? total - e.atk : 0;
+  let ext = 0;
+  if (e.atk > 0) ext = e.atk > hitAt ? -0.35 * ((total - e.atk) / (total - hitAt)) : e.atk > hitAt - 4 ? 1 : Math.max(0, e.atk / (hitAt - 4));
+  const extend = punch ? Math.max(0, ext) * 15 : 0, lean = e.atk > 0 ? ext * 3 : 0;
+  ctx.save(); ctx.translate(sx, sy - bob); ctx.scale(e.face || 1, 1); ctx.translate(lean, 0);
   const skin = flash ? "#fff" : e.player ? "#e8ad78" : "#d99a69";
   const coat = flash ? "#fff" : e.color || "#a43f35";
   const dark = e.player ? "#17264f" : e.boss ? "#34233f" : "#28253b";
@@ -104,9 +112,14 @@ function person(e) {
   ctx.fillStyle = outline; ctx.fillRect(-8 * s, -13 * s, 7 * s, 14 * s); ctx.fillRect(2 * s, -13 * s, 7 * s, 14 * s);
   ctx.fillStyle = dark;
   if (kick) {
-    const reach = (e.atk < 10 ? 25 : 10) * s;
-    ctx.fillRect(-7 * s, -20 * s, 7 * s, 8 * s); ctx.fillRect(1 * s, -14 * s, reach, 6 * s);
-    ctx.fillStyle = "#ddd"; ctx.fillRect((reach - 1) * s, -15 * s, 7 * s, 7 * s);
+    const k = Math.max(0, ext), len = (6 + k * 26) * s, rise = (14 + k * 10) * s;
+    ctx.fillRect(-7 * s, -23 * s, 6 * s, 12 * s);
+    ctx.fillStyle = "#ddd"; ctx.fillRect(-9 * s, -12 * s, 9 * s, 4 * s);
+    ctx.fillStyle = outline; ctx.fillRect(1 * s, -rise - 2 * s, len + 8 * s, 9 * s);
+    ctx.fillStyle = dark; ctx.fillRect(1 * s, -rise, len, 6 * s);
+    ctx.fillStyle = "#ddd"; ctx.fillRect(len, -rise - 1 * s, 8 * s, 8 * s);
+    if (k > 0.5) { ctx.strokeStyle = "rgba(255,255,255,.7)"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(2 * s, -rise + 3 * s, len + 6 * s, -0.7, 0.5); ctx.stroke(); }
   } else {
     ctx.fillRect(-7 * s + step, -23 * s, 6 * s, 12 * s);
     ctx.fillRect(2 * s - step, -23 * s, 6 * s, 12 * s);
@@ -122,7 +135,9 @@ function person(e) {
   ctx.fillStyle = outline; ctx.fillRect(-13 * s, -40 * s, 5 * s, 14 * s); ctx.fillRect(8 * s, -40 * s, 5 * s, 14 * s);
   ctx.fillStyle = skin;
   ctx.fillRect(-12 * s, -28 * s, 5 * s, 5 * s);
-  if (punch) { ctx.fillRect(8 * s, -38 * s, (11 + extend) * s, 6 * s); ctx.fillStyle = "#f0bc8e"; ctx.fillRect((17 + extend) * s, -39 * s, 7 * s, 7 * s); }
+  if (punch) { const wind = ext < 0 ? -ext * 10 : 0;
+    ctx.fillRect(8 * s - wind, -38 * s, (11 + extend) * s, 6 * s); ctx.fillStyle = "#f0bc8e"; ctx.fillRect((17 + extend) * s - wind, -39 * s, 7 * s, 7 * s);
+    if (ext > 0.5) { ctx.fillStyle = "rgba(255,255,255,.65)"; ctx.fillRect((24 + extend) * s, -41 * s, 10 * s, 2); ctx.fillRect((24 + extend) * s, -33 * s, 10 * s, 2); } }
   else { ctx.fillRect(8 * s, -28 * s, 5 * s, 5 * s); }
   // Head, hair and face
   ctx.fillStyle = outline; ctx.fillRect(-8 * s, -57 * s, 16 * s, 16 * s);
@@ -206,8 +221,28 @@ function drawBg(l) {
     ctx.fillStyle = "rgba(255,255,255,.2)"; ctx.fillRect(x + 25, FLOOR_TOP + 100, 2, 2);
   }
 }
+function drawMap() {
+  ctx.fillStyle = "rgba(9,13,31,.92)"; ctx.fillRect(0, 0, W, H);
+  panel(20, 20, W - 40, H - 40, "#223052");
+  text("JAMESTOWN AREA MAP", W / 2, 52, 20, "#f7d15c");
+  const n = LEVELS.length, cols = Math.ceil(n / 2), gx = (W - 100) / (cols - 1 || 1), pts = LEVELS.map((_, i) => {
+    const row = i < cols ? 0 : 1, c = row ? cols - 1 - (i - cols) : i; return [50 + c * gx, row ? 250 : 130]; });
+  ctx.strokeStyle = "#e7d8ad"; ctx.lineWidth = 4; ctx.setLineDash([8, 6]); ctx.beginPath();
+  pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.stroke(); ctx.setLineDash([]);
+  LEVELS.forEach((l, i) => {
+    const [x, y] = pts[i], cur = state !== "title" && i === lvl, done = cleared.includes(i);
+    ctx.fillStyle = "#171827"; ctx.beginPath(); ctx.arc(x, y, 17, 0, 7); ctx.fill();
+    ctx.fillStyle = done ? "#55d16b" : cur ? "#ffe98b" : "#7f88aa"; ctx.beginPath(); ctx.arc(x, y, 14, 0, 7); ctx.fill();
+    text(String(i + 1), x, y + 5, 14, "#171827");
+    text(l.name, x, y + (y < 190 ? -26 : 36), 9, cur ? "#ffe98b" : "#fff");
+    text(l.sub, x, y + (y < 190 ? -15 : 47), 7, "#c9cde0");
+  });
+  text("GREEN = CLEARED   YELLOW = CURRENT   M TO CLOSE", W / 2, 320, 10, "#d3d4e3");
+}
 function draw() {
-  ctx.clearRect(0, 0, W, H);
+  ctx.clearRect(0, 0, W, H); draw0(); if (showMap) drawMap();
+}
+function draw0() {
   if (state === "title") {
     drawBg(LEVELS[0]);
     ctx.fillStyle = "rgba(12,17,39,.52)"; ctx.fillRect(0, 0, W, H);
@@ -221,7 +256,7 @@ function draw() {
     text("DOWNTOWN  •  FOOTE AVE  •  LAKEWOOD", W / 2, 211, 10, "#e6e4d1");
     const prompt = Math.floor(frame / 28) % 2 ? "#ffe98b" : "#fff";
     text("PRESS ENTER", W / 2, 271, 20, prompt);
-    text("ARROWS / WASD MOVE     J PUNCH     K KICK     SPACE JUMP", W / 2, 342, 9, "#d3d4e3");
+    text("ARROWS / WASD MOVE     J PUNCH     K KICK     SPACE JUMP     M MAP", W / 2, 342, 9, "#d3d4e3");
     return;
   }
   if (state === "over" || state === "win") {
@@ -243,6 +278,10 @@ function draw() {
     ctx.fillStyle = "#cf4147"; ctx.fillRect(ix - 2, iy + 1, 4, 10); ctx.fillRect(ix - 7, iy + 4, 14, 4);
   }
   [...ents].sort((a, b) => a.y - b.y).forEach(person);
+  for (const f of fx) { const fxx = f.x - cam, fy = f.y - f.z, r = (f.big ? 16 : 11) * (1.2 - f.t / 12);
+    ctx.fillStyle = f.t % 2 ? "#fff" : "#ffd84a"; ctx.beginPath();
+    for (let i = 0; i < 8; i++) { const ang = i * Math.PI / 4, rr = i % 2 ? r * .45 : r; ctx.lineTo(fxx + Math.cos(ang) * rr, fy + Math.sin(ang) * rr); }
+    ctx.closePath(); ctx.fill(); }
   ctx.fillStyle = "rgba(12,16,32,.82)"; ctx.fillRect(0, 0, W, 39);
   panel(7, 4, 185, 31, "#303958"); text("BILLY", 14, 17, 9, "#fff", "left");
   bar(54, 9, 94, player.hp, player.max, "#55d16b");
